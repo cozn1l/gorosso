@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gorosso Store</title>
+    <!-- Подключение Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Подключение скрипта Telegram Web App -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        /* Стили для плавной смены темы */
+        body {
+            transition: background-color 0.3s, color 0.3s;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        /* Стили для кнопки, чтобы она выглядела лучше */
+        .btn-primary {
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        .btn-primary:active {
+            transform: scale(0.95);
+        }
+        /* Анимация появления товаров */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .product-card {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900">
+
+    <div id="app" class="container mx-auto p-4 max-w-4xl">
+        
+        <!-- Заголовок -->
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-bold tracking-tight">GOROSSO</h1>
+            <p class="text-gray-500">Streetwear Division</p>
+        </header>
+
+        <!-- Лоадер -->
+        <div id="loader" class="text-center py-10">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+            <p class="mt-4 text-lg">Загружаем каталог...</p>
+        </div>
+
+        <!-- Список товаров -->
+        <div id="product-list" class="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <!-- Карточки товаров будут вставлены сюда -->
+        </div>
+
+        <!-- Сообщение об ошибке -->
+        <div id="error-message" class="hidden text-center text-red-500 bg-red-100 p-4 rounded-lg mt-6">
+            <p>Не удалось загрузить товары. Попробуйте перезапустить магазин.</p>
+        </div>
+    </div>
+
+    <script>
+        // --- ИНИЦИАЛИЗАЦИЯ ---
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Раскрываем Web App на полный экран
+
+        const productList = document.getElementById('product-list');
+        const loader = document.getElementById('loader');
+        const errorMessage = document.getElementById('error-message');
+        
+        // URL вашего бэкенда. Для локальной разработки используйте URL от ngrok.
+        const API_URL = 'https://a92497702836.ngrok-free.app/api/products'; 
+
+        let cart = {}; // { productId: quantity }
+
+        // --- УПРАВЛЕНИЕ ТЕМОЙ ---
+        const applyTheme = () => {
+            document.body.style.backgroundColor = tg.themeParams.bg_color || '#f3f4f6';
+            document.body.style.color = tg.themeParams.text_color || '#111827';
+            // Вы можете добавить больше стилей для других элементов
+        };
+
+        // Применяем тему при загрузке и при ее изменении
+        tg.onEvent('themeChanged', applyTheme);
+        applyTheme();
+
+
+        // --- ОСНОВНАЯ ЛОГИКА ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchProducts();
+            configureMainButton();
+        });
+
+        // Загрузка товаров с API
+        async function fetchProducts() {
+            loader.style.display = 'block';
+            errorMessage.style.display = 'none';
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const products = await response.json();
+                renderProducts(products);
+            } catch (error) {
+                console.error("Fetch error:", error);
+                loader.style.display = 'none';
+                errorMessage.style.display = 'block';
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+
+        // Отрисовка товаров на странице
+        function renderProducts(products) {
+            productList.innerHTML = '';
+            products.forEach((product, index) => {
+                const card = document.createElement('div');
+                card.className = 'product-card bg-white rounded-lg shadow-md overflow-hidden dark:bg-gray-800';
+                card.style.opacity = 0; // for animation
+                card.style.animationDelay = `${index * 50}ms`;
+
+                card.innerHTML = `
+                    <img src="${product.imageUrl}" alt="${product.name}" class="w-full h-40 object-cover" onerror="this.onerror=null;this.src='https://placehold.co/600x400/ccc/000?text=No+Image';">
+                    <div class="p-4">
+                        <h3 class="font-bold text-md truncate">${product.name}</h3>
+                        <p class="text-gray-600 dark:text-gray-400 text-sm mb-2">${product.price} руб.</p>
+                        <button data-product-id="${product.id}" class="btn-primary w-full bg-gray-900 text-white py-2 rounded-lg text-sm font-semibold hover:bg-gray-700 dark:bg-blue-600 dark:hover:bg-blue-500">
+                            В корзину
+                        </button>
+                    </div>
+                `;
+                productList.appendChild(card);
+            });
+        }
+
+        // Логика добавления в корзину
+        productList.addEventListener('click', (e) => {
+            if (e.target && e.target.matches('button[data-product-id]')) {
+                const productId = e.target.dataset.productId;
+                addToCart(productId);
+                
+                // Визуальный фидбек
+                e.target.innerText = 'Добавлено!';
+                setTimeout(() => {
+                    e.target.innerText = 'В корзину';
+                }, 1000);
+            }
+        });
+        
+        function addToCart(productId) {
+            if (cart[productId]) {
+                cart[productId]++;
+            } else {
+                cart[productId] = 1;
+            }
+            updateMainButton();
+        }
+
+        // Настройка главной кнопки Telegram
+        function configureMainButton() {
+            tg.MainButton.setText('Корзина пуста');
+            tg.MainButton.disable();
+            tg.MainButton.color = '#374151'; // Цвет кнопки
+            tg.MainButton.textColor = '#FFFFFF';
+
+            tg.onEvent('mainButtonClicked', () => {
+                if (Object.keys(cart).length > 0) {
+                    // Отправляем данные корзины в формате JSON
+                    tg.sendData(JSON.stringify(cart));
+                }
+            });
+        }
+
+        // Обновление состояния главной кнопки
+        function updateMainButton() {
+            const itemCount = Object.values(cart).reduce((sum, count) => sum + count, 0);
+            if (itemCount > 0) {
+                tg.MainButton.setText(`Оплатить (${itemCount} шт.)`);
+                tg.MainButton.enable();
+                tg.MainButton.show();
+            } else {
+                tg.MainButton.setText('Корзина пуста');
+                tg.MainButton.disable();
+                tg.MainButton.hide();
+            }
+        }
+
+    </script>
+</body>
+</html>
